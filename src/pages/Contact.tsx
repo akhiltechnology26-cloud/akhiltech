@@ -13,7 +13,6 @@ import {
   Building2,
   ArrowRight,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { siteConfig } from '@/lib/data';
 
 interface FormState {
@@ -85,24 +84,22 @@ export default function Contact() {
     setErrorMessage('');
 
     try {
-      const { error } = await supabase.from('contact_submissions').insert({
-        name: form.name,
-        email: form.email,
-        phone: form.phone || null,
-        company: form.company || null,
-        service_interest: form.serviceInterest || null,
-        message: form.message,
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
       });
 
-      if (error) throw error;
-
-      const { error: emailError } = await supabase.functions.invoke('send-contact-email', {
-        body: form,
-      });
-
-      if (emailError) {
-        const emailMessage = emailError.context?.error || emailError.message || 'Email delivery failed.';
-        throw new Error(`Your message was saved, but the email notification could not be sent: ${emailMessage}`);
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          result &&
+          typeof result === 'object' &&
+          'error' in result &&
+          typeof result.error === 'string'
+            ? result.error
+            : 'Unable to send your message. Please try again.';
+        throw new Error(message);
       }
 
       setStatus('success');
