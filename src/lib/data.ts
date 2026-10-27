@@ -12,7 +12,22 @@ export const siteConfig = {
 export const heroImage = 'https://images.pexels.com/photos/14314638/pexels-photo-14314638.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
 export const dataCenterImage = 'https://images.pexels.com/photos/37730212/pexels-photo-37730212.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
 export const securityImage = 'https://images.pexels.com/photos/60504/security-protection-anti-virus-software-60504.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
-export const infraSupportImage = 'https://images.pexels.com/photos/4705628/pexels-photo-4705628.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
+export const infraSupportImage = 'https://images.pexels.com/photos/5480781/pexels-photo-5480781.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
+
+export const cybersecurityFeatures = [
+  { title: 'Security Audits & Assessments', description: 'Comprehensive vulnerability scanning and penetration testing to identify and remediate security gaps before attackers do.', icon: Shield },
+  { title: 'Firewall & Network Security', description: 'Advanced firewall configuration, intrusion detection systems, and traffic analysis to protect your network perimeter.', icon: Lock },
+  { title: 'Endpoint Protection', description: 'Next-generation antivirus, EDR, and device hardening to secure every laptop, server, and mobile endpoint.', icon: Cpu },
+  { title: 'Identity & Access Management', description: 'Multi-factor authentication, single sign-on, and role-based access controls to safeguard user identities.', icon: CheckCircle },
+  { title: 'Compliance & Governance', description: 'Stay compliant with GDPR, ISO 27001, HIPAA, and industry standards through expert auditing and guidance.', icon: Settings },
+  { title: '24/7 Threat Monitoring', description: 'Round-the-clock SOC monitoring with rapid incident response, automated containment, and threat intelligence.', icon: Zap },
+];
+
+export const cybersecurityStats = [
+  { value: '99.9%', label: 'Threat Detection' },
+  { value: '24/7', label: 'SOC Monitoring' },
+  { value: '100+', label: 'Audits Completed' },
+];
 
 export const hardwareGallery = [
   { url: 'https://images.pexels.com/photos/265101/pexels-photo-265101.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', alt: 'Modern office desk setup with laptop and stylish decor' },

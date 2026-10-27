@@ -96,6 +96,15 @@ export default function Contact() {
 
       if (error) throw error;
 
+      const { error: emailError } = await supabase.functions.invoke('send-contact-email', {
+        body: form,
+      });
+
+      if (emailError) {
+        const emailMessage = emailError.context?.error || emailError.message || 'Email delivery failed.';
+        throw new Error(`Your message was saved, but the email notification could not be sent: ${emailMessage}`);
+      }
+
       setStatus('success');
       setForm({
         name: '',

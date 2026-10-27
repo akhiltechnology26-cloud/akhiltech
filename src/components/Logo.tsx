@@ -18,9 +18,7 @@ export default function Logo({ variant = 'full', className = '' }: LogoProps) {
           <span className="font-heading font-bold text-white text-lg tracking-tight">
             Akhil<span className="text-accent-300"> Technology</span>
           </span>
-          <span className="text-[10px] text-gray-400 font-body font-medium tracking-wide mt-0.5">
-            IT SALES · SERVICES · SOLUTIONS
-          </span>
+
         </div>
       )}
     </div>
