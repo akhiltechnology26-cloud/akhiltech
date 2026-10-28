@@ -3,6 +3,9 @@
   "name": "akhiltechnology",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-27",
+  "vars": {
+    "RESEND_FROM_EMAIL": "gethelp@akhiltechnology.com"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
