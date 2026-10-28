@@ -1,12 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "akhiltechnology",
+  "name": "akhiltech",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-27",
   "workers_dev": true,
+  "preview_urls": true,
   "routes": [
     {
-      "pattern": "www.akhiltechnology.com/api/*",
+      "pattern": "*.akhiltechnology.com/*",
       "zone_name": "akhiltechnology.com"
     }
   ],
