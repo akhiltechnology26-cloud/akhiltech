@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Phone,
@@ -13,6 +13,8 @@ import {
   Building2,
   ArrowRight,
 } from 'lucide-react';
+import Turnstile from '@/components/Turnstile';
+import { isValidEmailAddress } from '@/lib/contactValidation';
 import { siteConfig } from '@/lib/data';
 
 interface FormState {
@@ -22,6 +24,37 @@ interface FormState {
   company: string;
   serviceInterest: string;
   message: string;
+}
+
+type FieldErrors = Partial<Record<keyof FormState, string>>;
+
+function validateForm(form: FormState): FieldErrors {
+  const errors: FieldErrors = {};
+  const email = form.email.trim();
+  const phone = form.phone.trim();
+
+  if (!form.name.trim()) {
+    errors.name = 'Please enter your name.';
+  }
+
+  if (!email) {
+    errors.email = 'Please enter your email address.';
+  } else if (!isValidEmailAddress(email)) {
+    errors.email = 'Enter a valid email address, such as name@example.com.';
+  }
+
+  if (phone) {
+    const digits = phone.replace(/\D/g, '');
+    if (!/^\+?[0-9().\s-]+$/.test(phone) || digits.length < 7 || digits.length > 15) {
+      errors.phone = 'Enter a valid phone number with 7 to 15 digits.';
+    }
+  }
+
+  if (!form.message.trim()) {
+    errors.message = 'Please enter a message.';
+  }
+
+  return errors;
 }
 
 const serviceOptions = [
@@ -71,15 +104,66 @@ export default function Contact() {
   });
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileError, setTurnstileError] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/turnstile-config')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Security verification is not configured yet.');
+        const result: unknown = await response.json();
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          !('siteKey' in result) ||
+          typeof result.siteKey !== 'string' ||
+          !result.siteKey
+        ) {
+          throw new Error('Security verification is not configured yet.');
+        }
+        if (!cancelled) setTurnstileSiteKey(result.siteKey);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTurnstileError(
+            error instanceof Error ? error.message : 'Unable to load the security check.',
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm((currentForm) => ({ ...currentForm, [name]: value }));
+    setFieldErrors((currentErrors) => {
+      if (!(name in currentErrors)) return currentErrors;
+      const nextErrors = { ...currentErrors };
+      delete nextErrors[name as keyof FormState];
+      return nextErrors;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const errors = validateForm(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    if (!turnstileToken) {
+      setTurnstileError('Please complete the security check before sending.');
+      return;
+    }
+
     setStatus('submitting');
     setErrorMessage('');
 
@@ -87,7 +171,7 @@ export default function Contact() {
       const response = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, turnstileToken }),
       });
 
       const result: unknown = await response.json();
@@ -111,11 +195,16 @@ export default function Contact() {
         serviceInterest: '',
         message: '',
       });
+      setFieldErrors({});
+      setTurnstileToken('');
+      setTurnstileResetKey((currentKey) => currentKey + 1);
     } catch (err) {
       setStatus('error');
       setErrorMessage(
         err instanceof Error ? err.message : 'Something went wrong. Please try again.'
       );
+      setTurnstileToken('');
+      setTurnstileResetKey((currentKey) => currentKey + 1);
     }
   };
 
@@ -235,7 +324,7 @@ export default function Contact() {
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={handleSubmit} className="space-y-5">
+                  <form onSubmit={handleSubmit} noValidate className="space-y-5">
                     {status === 'error' && (
                       <div className="flex items-start gap-3 p-4 rounded-xl bg-error-500/10 border border-error-500/20">
                         <AlertCircle className="w-5 h-5 text-error-500 flex-shrink-0 mt-0.5" />
@@ -262,10 +351,17 @@ export default function Contact() {
                             required
                             value={form.name}
                             onChange={handleChange}
+                            aria-invalid={Boolean(fieldErrors.name)}
+                            aria-describedby={fieldErrors.name ? 'contact-name-error' : undefined}
                             placeholder="John Doe"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all"
+                            className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border text-white text-sm placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all ${fieldErrors.name ? 'border-error-500' : 'border-white/10 focus:border-primary-500/50'}`}
                           />
                         </div>
+                        {fieldErrors.name && (
+                          <p id="contact-name-error" role="alert" className="mt-2 text-xs text-error-500">
+                            {fieldErrors.name}
+                          </p>
+                        )}
                       </div>
 
                       {/* Email */}
@@ -281,10 +377,17 @@ export default function Contact() {
                             required
                             value={form.email}
                             onChange={handleChange}
+                            aria-invalid={Boolean(fieldErrors.email)}
+                            aria-describedby={fieldErrors.email ? 'contact-email-error' : undefined}
                             placeholder="john@company.com"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all"
+                            className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border text-white text-sm placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all ${fieldErrors.email ? 'border-error-500' : 'border-white/10 focus:border-primary-500/50'}`}
                           />
                         </div>
+                        {fieldErrors.email && (
+                          <p id="contact-email-error" role="alert" className="mt-2 text-xs text-error-500">
+                            {fieldErrors.email}
+                          </p>
+                        )}
                       </div>
 
                       {/* Phone */}
@@ -299,10 +402,17 @@ export default function Contact() {
                             name="phone"
                             value={form.phone}
                             onChange={handleChange}
+                            aria-invalid={Boolean(fieldErrors.phone)}
+                            aria-describedby={fieldErrors.phone ? 'contact-phone-error' : undefined}
                             placeholder="+91 98765 43210"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all"
+                            className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border text-white text-sm placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all ${fieldErrors.phone ? 'border-error-500' : 'border-white/10 focus:border-primary-500/50'}`}
                           />
                         </div>
+                        {fieldErrors.phone && (
+                          <p id="contact-phone-error" role="alert" className="mt-2 text-xs text-error-500">
+                            {fieldErrors.phone}
+                          </p>
+                        )}
                       </div>
 
                       {/* Company */}
@@ -357,15 +467,47 @@ export default function Contact() {
                         rows={5}
                         value={form.message}
                         onChange={handleChange}
+                        aria-invalid={Boolean(fieldErrors.message)}
+                        aria-describedby={fieldErrors.message ? 'contact-message-error' : undefined}
                         placeholder="Tell us about your IT needs and how we can help..."
-                        className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all resize-none"
+                        className={`w-full px-4 py-3 rounded-xl bg-white/5 border text-white text-sm placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all resize-none ${fieldErrors.message ? 'border-error-500' : 'border-white/10 focus:border-primary-500/50'}`}
                       />
+                      {fieldErrors.message && (
+                        <p id="contact-message-error" role="alert" className="mt-2 text-xs text-error-500">
+                          {fieldErrors.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      {turnstileSiteKey ? (
+                        <Turnstile
+                          siteKey={turnstileSiteKey}
+                          resetKey={turnstileResetKey}
+                          onToken={(token) => {
+                            setTurnstileToken(token);
+                            setTurnstileError(
+                              token ? '' : 'The security check expired. Please complete it again.',
+                            );
+                          }}
+                          onError={setTurnstileError}
+                        />
+                      ) : (
+                        <p className="text-sm text-gray-400">
+                          {turnstileError || 'Loading security verification...'}
+                        </p>
+                      )}
+                      {turnstileError && turnstileSiteKey && (
+                        <p role="alert" className="mt-2 text-xs text-error-500">
+                          {turnstileError}
+                        </p>
+                      )}
                     </div>
 
                     {/* Submit */}
                     <button
                       type="submit"
-                      disabled={status === 'submitting'}
+                      disabled={status === 'submitting' || !turnstileToken}
                       className="group w-full flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/50 transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {status === 'submitting' ? (

@@ -3,8 +3,16 @@
   "name": "akhiltechnology",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-27",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "www.akhiltechnology.com/api/*",
+      "zone_name": "akhiltechnology.com"
+    }
+  ],
   "vars": {
-    "RESEND_FROM_EMAIL": "gethelp@akhiltechnology.com"
+    "RESEND_FROM_EMAIL": "gethelp@akhiltechnology.com",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFpIB57ODJH0IY73"
   },
   "assets": {
     "directory": "./dist",

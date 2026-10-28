@@ -1,8 +1,12 @@
+import { isValidEmailAddress } from '../src/lib/contactValidation';
+
 interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
 }
 
 interface ContactPayload {
@@ -12,9 +16,14 @@ interface ContactPayload {
   company: string;
   serviceInterest: string;
   message: string;
+  turnstileToken: string;
 }
 
-const recipient = 'gethelp@akhiltechnology.com';
+const recipient = 'sales@akhiltechnology.com';
+
+function hasTurnstileSiteKey(siteKey: string | undefined): siteKey is string {
+  return Boolean(siteKey && !siteKey.startsWith('REPLACE_WITH_'));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -29,6 +38,7 @@ function parseContactPayload(value: unknown): ContactPayload | null {
   if (!isRecord(value)) return null;
 
   const { name, email, message } = value;
+  const turnstileToken = value.turnstileToken;
   const phone = readOptionalText(value.phone);
   const company = readOptionalText(value.company);
   const serviceInterest = readOptionalText(value.serviceInterest);
@@ -37,6 +47,9 @@ function parseContactPayload(value: unknown): ContactPayload | null {
     typeof name !== 'string' ||
     typeof email !== 'string' ||
     typeof message !== 'string' ||
+    typeof turnstileToken !== 'string' ||
+    turnstileToken.length === 0 ||
+    turnstileToken.length > 2048 ||
     phone === null ||
     company === null ||
     serviceInterest === null
@@ -51,8 +64,7 @@ function parseContactPayload(value: unknown): ContactPayload | null {
   if (
     normalizedName.length === 0 ||
     normalizedName.length > 200 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) ||
-    normalizedEmail.length > 320 ||
+    !isValidEmailAddress(normalizedEmail) ||
     normalizedMessage.length === 0 ||
     normalizedMessage.length > 5000 ||
     phone.length > 50 ||
@@ -69,6 +81,7 @@ function parseContactPayload(value: unknown): ContactPayload | null {
     company,
     serviceInterest,
     message: normalizedMessage,
+    turnstileToken,
   };
 }
 
@@ -85,6 +98,33 @@ function jsonResponse(body: Record<string, unknown>, status: number): Response {
   return Response.json(body, { status });
 }
 
+async function verifyTurnstile(
+  token: string,
+  request: Request,
+  secretKey: string,
+): Promise<boolean> {
+  const body = new URLSearchParams({
+    secret: secretKey,
+    response: token,
+  });
+  const remoteIp = request.headers.get('CF-Connecting-IP');
+  if (remoteIp) body.set('remoteip', remoteIp);
+
+  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+
+  if (!response.ok) {
+    console.error('Turnstile verification endpoint returned an error.', response.status);
+    return false;
+  }
+
+  const result: unknown = await response.json();
+  return isRecord(result) && result.success === true;
+}
+
 async function handleContact(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -98,7 +138,21 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
   }
 
   if (!payload) {
-    return jsonResponse({ error: 'Please provide a valid name, email, and message.' }, 400);
+    return jsonResponse({ error: 'Please provide a valid name, email address, and message.' }, 400);
+  }
+
+  if (!env.TURNSTILE_SECRET_KEY || !hasTurnstileSiteKey(env.TURNSTILE_SITE_KEY)) {
+    console.error('Turnstile is not configured.');
+    return jsonResponse({ error: 'Security verification is not configured yet.' }, 503);
+  }
+
+  try {
+    if (!(await verifyTurnstile(payload.turnstileToken, request, env.TURNSTILE_SECRET_KEY))) {
+      return jsonResponse({ error: 'Security check failed. Please try again.' }, 400);
+    }
+  } catch (error) {
+    console.error('Unable to verify Turnstile response.', error);
+    return jsonResponse({ error: 'Unable to verify the security check. Please try again.' }, 502);
   }
 
   try {
@@ -136,6 +190,8 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
   const safeCompany = escapeHtml(payload.company || 'Not provided');
   const safeService = escapeHtml(payload.serviceInterest || 'Not specified');
   const safeMessage = escapeHtml(payload.message).replaceAll('\n', '<br />');
+  const subjectService = (payload.serviceInterest || 'General inquiry').replace(/[\r\n]+/g, ' ');
+  const subjectName = payload.name.replace(/[\r\n]+/g, ' ');
 
   let emailResponse: Response;
   try {
@@ -149,7 +205,7 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
         from: env.RESEND_FROM_EMAIL ?? 'Akhil Technology <onboarding@resend.dev>',
         to: [recipient],
         reply_to: payload.email,
-        subject: `New website inquiry from ${payload.name}`,
+        subject: `${subjectService}: ${subjectName}`,
         html: `
           <h2>New website inquiry</h2>
           <p><strong>Name:</strong> ${safeName}</p>
@@ -184,6 +240,12 @@ async function handleContact(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/api/turnstile-config' && request.method === 'GET') {
+      if (!hasTurnstileSiteKey(env.TURNSTILE_SITE_KEY)) {
+        return jsonResponse({ error: 'Security verification is not configured yet.' }, 503);
+      }
+      return jsonResponse({ siteKey: env.TURNSTILE_SITE_KEY }, 200);
+    }
     if (url.pathname === '/api/contact') {
       return handleContact(request, env);
     }
